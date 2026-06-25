@@ -475,7 +475,12 @@ function dbD(p){return fetch(`${DB}/${HK}/${p}.json`,{method:'DELETE'})}
 
 // ── 폴링 ──
 let _poll=null;
-function startPoll(){if(_poll)clearInterval(_poll);_poll=setInterval(fetchAll,4000)}
+function startPoll(){if(_poll)clearInterval(_poll);_poll=setInterval(()=>{
+  // 입력칸에 포커스 중이면 폴링 스킵 (타이핑 방해 방지)
+  const active=document.activeElement;
+  if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'))return;
+  fetchAll();
+},4000)}
 async function fetchAll(){
   try{
     const [pR,wR,nR,wpR]=await Promise.all([
@@ -566,8 +571,25 @@ async function addPatient(){
 }
 function clearForm(){['f-dept','f-gender','f-ward'].forEach(id=>document.getElementById(id).value='');['f-name','f-chart','f-age','f-reason','f-memo'].forEach(id=>document.getElementById(id).value='');}
 
-// ── 병실 배정 ──
-async function assignRoom(key,room){
+// ── 병실 저장 (입퇴원계 전용 버튼 방식) ──
+async function saveRoom(key){
+  const inp=document.getElementById('room-'+key);
+  if(!inp){showToast('입력칸을 찾을 수 없습니다.');return;}
+  const room=inp.value.trim();
+  if(!room){showToast('병실 번호를 입력해 주세요.');inp.focus();return;}
+  try{
+    await dbS(`patients/${targetDateKey}/${key}/assignedRoom`,room);
+    await dbP('notifications',{type:'ward',msg:`병실 배정 완료 → ${room}`,time:tsStr(),createdAt:Date.now()});
+    showToast(`✅ ${room} 배정 완료!`);await fetchAll();
+  }catch(e){showToast('저장 실패. 다시 시도해 주세요.');}
+}
+async function clearRoom(key){
+  if(!confirm('병실 배정을 취소하시겠습니까?'))return;
+  try{
+    await dbS(`patients/${targetDateKey}/${key}/assignedRoom`,'');
+    showToast('병실 배정 취소됨');await fetchAll();
+  }catch(e){showToast('취소 실패.');}
+}
   try{
     await dbS(`patients/${targetDateKey}/${key}/assignedRoom`,room);
     if(room)await dbP('notifications',{type:'ward',msg:`병실 배정: → ${room}`,time:tsStr(),createdAt:Date.now()});
@@ -700,6 +722,16 @@ function renderAdm(){
     const tp=t?`<span class="pill ${t.includes('MR')?'pmr':'pop'}">${t}</span>`:'<span style="font-size:11px;color:var(--text-s)">일반</span>';
     const statusDot=p.assignedRoom?'<span style="color:var(--green);font-size:16px">🟢</span>':'<span style="font-size:16px;animation:blink .8s infinite">🔴</span>';
     const rowCls=p.assignedRoom?'row-assigned':isMrOp(p)?'row-mr':'row-wait';
+    const roomCell=p.assignedRoom
+      ?`<div style="display:flex;align-items:center;gap:6px">
+          <span class="assigned-room">✓ ${p.assignedRoom}</span>
+          <button class="btn bsm" style="background:var(--red-l);color:var(--red-t);border:none;font-size:11px;padding:3px 8px" onclick="clearRoom('${p._key}')">취소</button>
+        </div>`
+      :`<div style="display:flex;align-items:center;gap:5px">
+          <input class="ri-adm" type="text" id="room-${p._key}" placeholder="병실 입력 (예:31-201)" style="width:130px">
+          <button class="btn bpu bsm" onclick="saveRoom('${p._key}')">저장</button>
+          <span class="wait-room">미배정</span>
+        </div>`;
     return `<tr class="${rowCls}">
       <td style="text-align:center">${statusDot}</td>
       <td><span class="pd">${p.dept}</span></td>
@@ -710,13 +742,7 @@ function renderAdm(){
       <td style="font-size:12px">${p.reason}</td>
       <td style="font-size:11px;color:var(--text-s)">${p.memo||'-'}</td>
       <td style="font-size:12px">${p.ward||'-'}</td>
-      <td style="background:#faf5ff;min-width:160px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <input class="ri-adm ${p.assignedRoom?'has-val':''}" type="text" value="${p.assignedRoom||''}" placeholder="병실 선점 입력"
-            onchange="assignRoom('${p._key}',this.value);this.className='ri-adm '+(this.value?'has-val':'')">
-          ${p.assignedRoom?`<span class="assigned-room">✓ ${p.assignedRoom}</span>`:`<span class="wait-room">미배정</span>`}
-        </div>
-      </td>
+      <td style="background:#faf5ff;min-width:200px">${roomCell}</td>
       <td><button class="ib" onclick="openEdit('${p._key}')">✏️</button></td>
     </tr>`;
   }).join('');
