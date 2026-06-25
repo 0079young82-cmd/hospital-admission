@@ -590,6 +590,7 @@ async function clearRoom(key){
     showToast('병실 배정 취소됨');await fetchAll();
   }catch(e){showToast('취소 실패.');}
 }
+async function assignRoom(key,room){
   try{
     await dbS(`patients/${targetDateKey}/${key}/assignedRoom`,room);
     if(room)await dbP('notifications',{type:'ward',msg:`병실 배정: → ${room}`,time:tsStr(),createdAt:Date.now()});
