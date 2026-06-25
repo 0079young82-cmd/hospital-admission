@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>입원환자 병실배정 관리</title>
+<style>
+  :root {
+    --blue:#1a6fd4;--blue-light:#e8f1fc;--blue-text:#0d4a9e;
+    --green:#0e8a5f;--green-light:#e6f5ef;--green-text:#085c3e;
+    --red:#c0392b;--red-light:#fdecea;--red-text:#8b1a12;
+    --orange:#c47a1a;--orange-light:#fdf3e3;--orange-text:#7a4a00;
+    --gray:#6b7280;--gray-light:#f3f4f6;--border:#e5e7eb;
+    --text:#111827;--text-s:#6b7280;--white:#fff;
+    --radius:8px;--radius-lg:12px;
+    --font:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);background:#f8fafc;color:var(--text);font-size:14px;min-height:100vh}
+
+  /* 로딩 */
+  #loadingScreen{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:12px}
+  #loadingScreen h2{font-size:16px;color:var(--text-s)}
+  .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+
+
+  /* 헤더 */
+  .app-header{background:#fff;border-bottom:1px solid var(--border);padding:0 16px;position:sticky;top:0;z-index:100}
+  .header-inner{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;min-height:52px;gap:10px;flex-wrap:wrap;padding:8px 0}
+  .header-title h1{font-size:15px;font-weight:700;color:var(--text)}
+  .header-title p{font-size:11px;color:var(--text-s);margin-top:2px}
+  .header-badges{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .badge-date{background:var(--blue-light);color:var(--blue-text)}
+  .badge-tmr{background:#f0f4ff;color:#3b4ea6}
+  .badge-open{background:var(--green-light);color:var(--green-text)}
+  .badge-closed{background:var(--red-light);color:var(--red-text)}
+  .badge-cd{background:var(--orange-light);color:var(--orange-text)}
+  .live-dot{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green-text);font-weight:700}
+  .live-dot::before{content:'';width:7px;height:7px;background:var(--green);border-radius:50%;animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* 메인 */
+  .main{max-width:980px;margin:0 auto;padding:14px}
+  .banner{border-radius:var(--radius);padding:9px 13px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px;margin-bottom:12px}
+  .banner-warn{background:var(--orange-light);color:var(--orange-text);border:1px solid #f0c36d}
+  .banner-danger{background:var(--red-light);color:var(--red-text);border:1px solid #f5a99d}
+  .banner-ok{background:var(--green-light);color:var(--green-text);border:1px solid #7ecbb0}
+
+  /* 통계 */
+  .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  .stat-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:11px;text-align:center}
+  .stat-num{font-size:24px;font-weight:700;line-height:1}
+  .stat-lbl{font-size:11px;color:var(--text-s);margin-top:3px}
+
+  /* 탭 */
+  .tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:14px;overflow-x:auto}
+  .tab{padding:9px 14px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--text-s);border-bottom:2px solid transparent;white-space:nowrap;margin-bottom:-1px;font-family:var(--font)}
+  .tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+  .tab .tb{background:var(--red);color:#fff;border-radius:10px;padding:1px 5px;font-size:10px;margin-left:3px}
+  .section{display:none}.section.active{display:block}
+
+  /* 폼 */
+  .form-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:14px}
+  .form-hint{font-size:12px;color:var(--text-s);margin-bottom:12px}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:9px}
+  .form-group label{font-size:11px;color:var(--text-s);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+  .form-group input,.form-group select,.form-group textarea{width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);font-family:var(--font)}
+  .form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--blue)}
+  .form-group textarea{resize:vertical;min-height:55px;line-height:1.5}
+  .form-full{grid-column:1/-1}
+  .btn-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+  .btn{padding:8px 16px;font-size:13px;font-weight:700;border-radius:var(--radius);cursor:pointer;border:1px solid transparent;font-family:var(--font)}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{opacity:.9}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{background:none;color:var(--text-s);border-color:var(--border)}
+  .btn-ghost:hover{background:var(--gray-light)}
+  .btn-success{background:var(--green);color:#fff}
+  .btn-warn{background:var(--orange);color:#fff}
+  .btn-sm{padding:6px 12px;font-size:12px}
+
+  /* 잠금 */
+  .locked-box{background:var(--red-light);border:1px solid #f5a99d;border-radius:var(--radius-lg);padding:18px;text-align:center;margin-bottom:14px}
+  .locked-box h3{font-size:15px;font-weight:700;color:var(--red-text);margin-bottom:5px}
+  .locked-box p{font-size:13px;color:var(--red-text);opacity:.85;line-height:1.6}
+
+  /* 과별 현황 */
+  .dept-section h3{font-size:11px;font-weight:700;color:var(--text-s);margin-bottom:7px;text-transform:uppercase;letter-spacing:.4px}
+  .dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:5px}
+  .dept-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px}
+  .dept-card.done{border-color:var(--green);background:var(--green-light)}
+  .dept-card-name{font-size:11px;color:var(--text-s);margin-bottom:2px}
+  .dept-card.done .dept-card-name{color:var(--green-text)}
+  .dept-card-val{font-size:13px;font-weight:700;color:var(--text)}
+  .dept-card.done .dept-card-val{color:var(--green-text)}
+
+  /* 목록 */
+  .filter-row{display:flex;gap:7px;margin-bottom:9px;flex-wrap:wrap;align-items:center}
+  .filter-row select{font-size:13px;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);font-family:var(--font)}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg)}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:580px}
+  th{background:var(--gray-light);color:var(--text-s);font-weight:700;text-align:left;padding:8px 11px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;white-space:nowrap}
+  td{padding:8px 11px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#fafafa}
+  .pill{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700}
+  .pill-m{background:#dbeafe;color:#1e40af}
+  .pill-f{background:#fce7f3;color:#9d174d}
+  .pill-dept{background:var(--gray-light);color:var(--gray);font-size:11px;padding:2px 6px;border-radius:4px}
+  .room-input{width:78px;font-size:12px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-family:var(--font)}
+  .room-input:focus{outline:none;border-color:var(--blue)}
+  .icon-btn{background:none;border:none;cursor:pointer;color:var(--text-s);padding:3px;border-radius:4px;font-size:15px;line-height:1}
+  .icon-btn:hover{background:var(--gray-light);color:var(--red)}
+  .empty-state{text-align:center;padding:28px;color:var(--text-s);font-size:13px}
+
+  /* 병동 */
+  .ward-tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:10px}
+  .ward-table{width:100%;border-collapse:collapse;font-size:14px}
+  .ward-table th,.ward-table td{padding:10px 13px;border-bottom:1px solid var(--border);text-align:center}
+  .ward-table th{background:var(--gray-light);font-size:11px;font-weight:700;color:var(--text-s);text-transform:uppercase}
+  .ward-table td:first-child{text-align:left;font-weight:700}
+  .ward-table tr:last-child td{border-bottom:none}
+  .clickable{cursor:pointer;border-radius:4px;padding:3px 7px}
+  .clickable:hover{background:var(--blue-light);color:var(--blue-text)}
+  .c-avail{color:var(--green);font-weight:700}
+  .c-warn{color:var(--orange);font-weight:700}
+  .c-full{color:var(--red);font-weight:700}
+
+  /* 마감요약 */
+  .summary-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px}
+  .summary-card h3{font-size:14px;font-weight:700;margin-bottom:10px}
+  .sum-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .sum-row:last-child{border-bottom:none}
+  .sum-label{color:var(--text-s);font-size:12px}
+  .sum-val{font-weight:700}
+  .wait-card{background:var(--orange-light);border:1px solid #f0c36d;border-radius:var(--radius);padding:11px;margin-bottom:10px}
+  .wait-card h4{font-size:12px;font-weight:700;color:var(--orange-text);margin-bottom:7px}
+  .wait-item{padding:4px 0;border-bottom:1px solid #f0c36d;font-size:13px;color:var(--orange-text)}
+  .wait-item:last-child{border-bottom:none}
+  .all-assigned{background:var(--green-light);border:1px solid #7ecbb0;border-radius:var(--radius);padding:11px;text-align:center;color:var(--green-text);font-weight:700;font-size:13px;margin-bottom:10px}
+
+  /* 알림 */
+  .notify-wrap{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+  .notify-item{display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)}
+  .notify-item:last-child{border-bottom:none}
+  .dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
+  .dot-new{background:var(--green)}.dot-ward{background:var(--blue)}.dot-remind{background:var(--orange)}.dot-lock{background:var(--red)}
+  .n-msg{font-size:13px}.n-time{font-size:11px;color:var(--text-s);margin-top:1px}
+  .schedule-box{background:var(--gray-light);border-radius:var(--radius-lg);padding:14px}
+  .schedule-box h3{font-size:13px;font-weight:700;margin-bottom:9px}
+  .sch-item{display:flex;gap:11px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .sch-item:last-child{border-bottom:none}
+  .sch-time{font-weight:700;color:var(--blue);min-width:55px}
+  .sch-desc{color:var(--text-s)}
+
+  /* 토스트 */
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 20px;border-radius:22px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;opacity:0;transition:opacity .25s;white-space:nowrap}
+  .toast.show{opacity:1}
+
+  @media(max-width:600px){
+    .stats-row{grid-template-columns:repeat(2,1fr)}
+    .dept-grid{grid-template-columns:repeat(3,1fr)}
+    .main{padding:10px}
+    .tab{padding:8px 10px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+
+<!-- 로딩 -->
+<div id="loadingScreen">
+  <div class="spinner"></div>
+  <h2>서버 연결 중...</h2>
+</div>
+
+
+
+<!-- 헤더 -->
+<header class="app-header" id="appHeader" style="display:none">
+  <div class="header-inner">
+    <div class="header-title">
+      <div>
+        <h1>🏥 입원환자 병실배정 관리</h1>
+        <p>마감: 매일 오후 4:30 자동 잠금 · 실시간 공유</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-date" id="todayBadge"></span>
+      <span class="badge badge-tmr" id="tomorrowBadge"></span>
+      <span class="badge" id="statusBadge"></span>
+      <span class="badge badge-cd" id="countdownBadge" style="display:none"></span>
+      <span class="live-dot" id="liveIndicator">LIVE</span>
+    </div>
+  </div>
+</header>
+
+<!-- 앱 본체 -->
+<div class="main" id="appMain" style="display:none">
+  <div id="deadlineBanner" style="display:none"></div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-num" id="sTotal">0</div><div class="stat-lbl">총 입원예정</div></div>
+    <div class="stat-card"><div class="stat-num" id="sMale">0</div><div class="stat-lbl">남자</div></div>
+    <div class="stat-card"><div class="stat-num" id="sFemale">0</div><div class="stat-lbl">여자</div></div>
+    <div class="stat-card"><div class="stat-num" id="sWait">0</div><div class="stat-lbl">병실 미배정</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('input')">📝 환자 입력</button>
+    <button class="tab" onclick="switchTab('list')">📋 목록</button>
+    <button class="tab" onclick="switchTab('ward')">🛏 병동 현황</button>
+    <button class="tab" onclick="switchTab('summary')">📊 마감 요약</button>
+    <button class="tab" onclick="switchTab('notify')">🔔 알림<span class="tb" id="nBadge" style="display:none">0</span></button>
+  </div>
+
+  <!-- 입력 -->
+  <div id="sec-input" class="section active">
+    <div id="lockedBox" class="locked-box" style="display:none">
+      <h3>🔒 오후 4:30 — 입력이 마감되었습니다</h3>
+      <p>입퇴원계에서 병실 배정을 진행 중입니다.<br>추가 입원이 필요한 경우 <strong>입퇴원계에 직접 연락</strong>해 주세요.</p>
+    </div>
+    <div id="formBox" class="form-card">
+      <p class="form-hint">⏰ 다음날 입원 예정 환자를 오후 4:30 이전에 입력해 주세요 · 입력 즉시 전 직원에게 실시간 공유됩니다</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>진료과 *</label>
+          <select id="f-dept">
+            <option value="">선택</option>
+            <option>내과1</option><option>내과2</option><option>내과3</option><option>내과5</option>
+            <option>정형외과1</option><option>정형외과2</option><option>정형외과3</option>
+            <option>신경외과1</option><option>신경외과2</option>
+            <option>소아청소년과1</option><option>소아청소년과2</option><option>소아청소년과3</option>
+            <option>치과</option><option>외과</option><option>산부인과</option><option>비뇨기과</option>
+          </select>
+        </div>
+        <div class="form-group"><label>성명 *</label><input id="f-name" type="text" placeholder="홍길동"></div>
+        <div class="form-group"><label>차트번호</label><input id="f-chart" type="text" placeholder="1234567"></div>
+        <div class="form-group">
+          <label>성별</label>
+          <select id="f-gender"><option value="">선택</option><option value="남">남</option><option value="여">여</option></select>
+        </div>
+        <div class="form-group"><label>나이</label><input id="f-age" type="number" placeholder="65" min="0" max="130"></div>
+        <div class="form-group">
+          <label>희망 병동</label>
+          <select id="f-ward">
+            <option value="">무관</option>
+            <option>31병동</option><option>32병동</option><option>51병동</option><option>52병동</option><option>62병동</option>
+          </select>
+        </div>
+        <div class="form-group form-full"><label>입원 사유 *</label><textarea id="f-reason" placeholder="예) 복강경 담낭절제술 예정, 수술 전날 입원"></textarea></div>
+        <div class="form-group form-full"><label>메모 (특이사항)</label><textarea id="f-memo" placeholder="예) 1인실 요청, 격리 필요, 보호자 상주 등"></textarea></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="submitBtn" onclick="addPatient()">✅ 입력 완료 — 전 직원 즉시 공유</button>
+        <button class="btn btn-ghost" onclick="clearForm()">초기화</button>
+      </div>
+    </div>
+    <div class="dept-section">
+      <h3>과별 입력 현황 (실시간)</h3>
+      <div class="dept-grid" id="deptGrid"></div>
+    </div>
+  </div>
+
+  <!-- 목록 -->
+  <div id="sec-list" class="section">
+    <div class="filter-row">
+      <select id="filterDept" onchange="renderList()"><option value="">전체 과</option></select>
+      <select id="filterGender" onchange="renderList()"><option value="">전체</option><option value="남">남자</option><option value="여">여자</option></select>
+      <button class="btn btn-success btn-sm" onclick="exportKakao()" style="margin-left:auto">📤 카카오톡 전송용 복사</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>진료과</th><th>성명</th><th>차트</th><th>성별/나이</th><th>입원사유</th><th>메모</th><th>희망병동</th><th>배정병실</th><th></th></tr></thead>
+        <tbody id="patientTbody"></tbody>
+      </table>
+    </div>
+    <div id="listEmpty" class="empty-state" style="display:none">📭 입력된 환자가 없습니다</div>
+  </div>
+
+  <!-- 병동 -->
+  <div id="sec-ward" class="section">
+    <p style="font-size:12px;color:var(--text-s);margin-bottom:10px">숫자를 클릭하면 수정할 수 있습니다. 저장하면 전 직원에게 실시간 공유됩니다.</p>
+    <div class="ward-tbl-wrap">
+      <table class="ward-table">
+        <thead><tr><th>병동</th><th>남자 잔여</th><th>여자 잔여</th><th>1인실</th><th>기타</th><th>총 잔여</th></tr></thead>
+        <tbody id="wardTbody"></tbody>
+      </table>
+    </div>
+    <button class="btn btn-warn" onclick="saveWardAndNotify()">💾 저장 및 전 직원 실시간 공유</button>
+  </div>
+
+  <!-- 마감요약 -->
+  <div id="sec-summary" class="section">
+    <div class="summary-card">
+      <h3 id="summaryTitle">📋 입원예정 최종 요약</h3>
+      <div id="summaryContent"></div>
+    </div>
+    <div id="waitSection"></div>
+    <div class="btn-row">
+      <button class="btn btn-success" onclick="exportKakao()">📤 카카오톡 전송용 복사</button>
+      <button class="btn btn-ghost" onclick="window.print()">🖨 인쇄</button>
+    </div>
+  </div>
+
+  <!-- 알림 -->
+  <div id="sec-notify" class="section">
+    <div class="notify-wrap">
+      <p style="font-size:13px;font-weight:700;margin-bottom:9px">실시간 활동 기록</p>
+      <div id="notifyList"><div class="empty-state">기록이 없습니다</div></div>
+    </div>
+    <div class="schedule-box">
+      <h3>📅 자동 알림 일정</h3>
+      <div class="sch-item"><span class="sch-time">10:00</span><span class="sch-desc">🟡 미입력 과에 1차 리마인더</span></div>
+      <div class="sch-item"><span class="sch-time">14:00</span><span class="sch-desc">🟠 미입력 과에 2차 리마인더 (긴급)</span></div>
+      <div class="sch-item"><span class="sch-time">16:00</span><span class="sch-desc">🔴 "30분 후 마감" 전체 공지</span></div>
+      <div class="sch-item"><span class="sch-time">16:30</span><span class="sch-desc">🔒 자동 마감 · 입력 잠금</span></div>
+      <div class="sch-item"><span class="sch-time">16:35</span><span class="sch-desc">📋 입퇴원계에 최종 요약 자동 전송</span></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════
+const DEPTS = ['내과1','내과2','내과3','내과5',
+               '정형외과1','정형외과2','정형외과3',
+               '신경외과1','신경외과2',
+               '소아청소년과1','소아청소년과2','소아청소년과3',
+               '치과','외과','산부인과','비뇨기과'];
+const DEADLINE_H = 16, DEADLINE_M = 30;
+
+let DB_URL = 'https://dwhospital-admission-default-rtdb.firebaseio.com';
+let HOSPITAL_KEY = 'dwhospital';
+let patients = [];
+let notifications = [];
+let wards = {
+  '31병동':{m:6,f:4,s:1,etc:0},
+  '32병동':{m:3,f:5,s:2,etc:1},
+  '51병동':{m:5,f:3,s:1,etc:0},
+  '52병동':{m:2,f:6,s:0,etc:2},
+  '62병동':{m:4,f:4,s:2,etc:0}
+};
+
+// ═══════════════════════════════════════════════
+// FIREBASE REST API (SDK 없이 fetch만 사용)
+// ═══════════════════════════════════════════════
+function dbGet(path) {
+  return fetch(`${DB_URL}/${HOSPITAL_KEY}/${path}.json`)
+    .then(r => r.json());
+}
+function dbSet(path, data) {
+  return fetch(`${DB_URL}/${HOSPITAL_KEY}/${path}.json`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json());
+}
+function dbPush(path, data) {
+  return fetch(`${DB_URL}/${HOSPITAL_KEY}/${path}.json`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json());
+}
+function dbDelete(path) {
+  return fetch(`${DB_URL}/${HOSPITAL_KEY}/${path}.json`, {method:'DELETE'});
+}
+
+// ═══════════════════════════════════════════════
+// 실시간 폴링 (3초마다 서버에서 최신 데이터)
+// ═══════════════════════════════════════════════
+let _pollTimer = null;
+function startPolling() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(fetchAll, 3000);
+}
+
+async function fetchAll() {
+  try {
+    const [pRaw, wRaw, nRaw] = await Promise.all([
+      dbGet('patients'),
+      dbGet('wards'),
+      dbGet('notifications')
+    ]);
+
+    // 환자
+    const newPts = pRaw ? Object.entries(pRaw).map(([k,v]) => ({...v, _key:k})) : [];
+    patients = newPts;
+
+    // 병동
+    if (wRaw) wards = wRaw;
+
+    // 알림
+    notifications = nRaw ? Object.values(nRaw).reverse().slice(0,50) : [];
+
+    // UI 갱신
+    updateStats();
+    renderDeptGrid();
+    updateNBadge();
+
+    const curTab = document.querySelector('.tab.active');
+    if (curTab) {
+      const idx = [...document.querySelectorAll('.tab')].indexOf(curTab);
+      const tabs = ['input','list','ward','summary','notify'];
+      const t = tabs[idx];
+      if (t === 'list') renderList();
+      if (t === 'ward') renderWard();
+      if (t === 'summary') renderSummary();
+      if (t === 'notify') renderNotify();
+    }
+
+    document.getElementById('liveIndicator').style.display = 'inline-flex';
+  } catch(e) {
+    document.getElementById('liveIndicator').style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 설정
+// ═══════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════
+// 앱 초기화
+// ═══════════════════════════════════════════════
+async function initApp() {
+  document.getElementById('loadingScreen').style.display = 'flex';
+  try {
+    await fetchAll();
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('appHeader').style.display = 'block';
+    document.getElementById('appMain').style.display = 'block';
+    updateDeadlineUI();
+    startPolling();
+    setInterval(updateDeadlineUI, 30000);
+    let _lastDate = new Date().toDateString();
+    setInterval(() => {
+      const now = new Date().toDateString();
+      if (now !== _lastDate) { _lastDate = now; updateDeadlineUI(); }
+    }, 60000);
+  } catch(e) {
+    document.getElementById('loadingScreen').innerHTML = '<p style="color:#c0392b;padding:20px;text-align:center">서버 연결 실패.<br>Firebase URL을 확인해 주세요.<br><button onclick="resetSetup()" style="margin-top:10px;padding:8px 16px;background:#1a6fd4;color:#fff;border:none;border-radius:8px;cursor:pointer">설정 다시 하기</button></p>';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initApp();
+});
+
+// ═══════════════════════════════════════════════
+// 시간 유틸
+// ═══════════════════════════════════════════════
+function isLocked() {
+  const n = new Date();
+  return n.getHours() > DEADLINE_H || (n.getHours() === DEADLINE_H && n.getMinutes() >= DEADLINE_M);
+}
+function minsLeft() {
+  const n = new Date();
+  const dl = new Date(n); dl.setHours(DEADLINE_H, DEADLINE_M, 0, 0);
+  return Math.max(0, Math.round((dl - n) / 60000));
+}
+function fmtDate(d) {
+  const days = ['일','월','화','수','목','금','토'];
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
+}
+function tomorrow() {
+  const d = new Date(); d.setDate(d.getDate()+1); return fmtDate(d);
+}
+function timeStr() {
+  const n = new Date();
+  return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
+}
+
+// ═══════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════
+function updateDeadlineUI() {
+  document.getElementById('todayBadge').textContent = '오늘 ' + fmtDate(new Date());
+  document.getElementById('tomorrowBadge').textContent = '입원예정일 ' + tomorrow();
+
+  const locked = isLocked();
+  const ml = minsLeft();
+  const sb = document.getElementById('statusBadge');
+  sb.className = locked ? 'badge badge-closed' : 'badge badge-open';
+  sb.textContent = locked ? '🔒 마감' : '✅ 입력 가능';
+
+  const cb = document.getElementById('countdownBadge');
+  if (!locked && ml <= 60) { cb.style.display='inline-flex'; cb.textContent=`⏱ ${ml}분 후 마감`; }
+  else cb.style.display = 'none';
+
+  const banner = document.getElementById('deadlineBanner');
+  if (locked) {
+    banner.className='banner banner-danger';
+    banner.innerHTML='🔒 오후 4:30 마감 — 입력이 잠겼습니다. 추가 입원 시 입퇴원계에 직접 연락하세요.';
+    banner.style.display='flex';
+  } else if (ml<=30) {
+    banner.className='banner banner-warn';
+    banner.innerHTML=`⚠️ 마감 <strong>${ml}분 전</strong>입니다. 빨리 입력해 주세요!`;
+    banner.style.display='flex';
+  } else if (ml<=60) {
+    banner.className='banner banner-ok';
+    banner.innerHTML=`⏰ 오늘 오후 4:30 마감까지 <strong>${ml}분</strong> 남았습니다.`;
+    banner.style.display='flex';
+  } else banner.style.display='none';
+
+  document.getElementById('lockedBox').style.display = locked ? 'block' : 'none';
+  document.getElementById('formBox').style.display = locked ? 'none' : 'block';
+  document.getElementById('submitBtn').disabled = locked;
+}
+
+function updateStats() {
+  document.getElementById('sTotal').textContent = patients.length;
+  document.getElementById('sMale').textContent = patients.filter(p=>p.gender==='남').length;
+  document.getElementById('sFemale').textContent = patients.filter(p=>p.gender==='여').length;
+  document.getElementById('sWait').textContent = patients.filter(p=>!p.assignedRoom).length;
+}
+
+function renderDeptGrid() {
+  document.getElementById('deptGrid').innerHTML = DEPTS.map(d => {
+    const cnt = patients.filter(p=>p.dept===d).length;
+    return `<div class="dept-card ${cnt>0?'done':''}">
+      <div class="dept-card-name">${d}</div>
+      <div class="dept-card-val">${cnt>0?cnt+'명 ✓':'미입력'}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateNBadge() {
+  const b = document.getElementById('nBadge');
+  b.textContent = notifications.length;
+  b.style.display = notifications.length ? 'inline' : 'none';
+}
+
+// ═══════════════════════════════════════════════
+// 환자 CRUD
+// ═══════════════════════════════════════════════
+async function addPatient() {
+  if (isLocked()) { alert('오후 4:30 마감으로 입력이 잠겼습니다.\n추가 입원 시 입퇴원계에 직접 연락해 주세요.'); return; }
+  const dept = document.getElementById('f-dept').value;
+  const name = document.getElementById('f-name').value.trim();
+  const reason = document.getElementById('f-reason').value.trim();
+  if (!dept||!name||!reason) { alert('진료과, 성명, 입원사유는 필수 항목입니다.'); return; }
+
+  const p = {
+    dept, name,
+    chart: document.getElementById('f-chart').value.trim(),
+    gender: document.getElementById('f-gender').value,
+    age: document.getElementById('f-age').value,
+    ward: document.getElementById('f-ward').value,
+    reason,
+    memo: document.getElementById('f-memo').value.trim(),
+    assignedRoom: '',
+    time: timeStr(),
+    createdAt: Date.now()
+  };
+
+  document.getElementById('submitBtn').disabled = true;
+  try {
+    await dbPush('patients', p);
+    await dbPush('notifications', { type:'new', msg:`[${p.time}] ${dept} ${name} 입원 등록`, time: p.time, createdAt: Date.now() });
+    clearForm();
+    showToast(`${name} 환자 등록 완료 ✓ 전 직원에게 실시간 공유됨`);
+    await fetchAll();
+  } catch(e) {
+    alert('저장 실패. 네트워크를 확인해 주세요.');
+  } finally {
+    document.getElementById('submitBtn').disabled = isLocked();
+  }
+}
+
+function clearForm() {
+  ['f-dept','f-gender','f-ward'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-chart','f-age','f-reason','f-memo'].forEach(id => document.getElementById(id).value = '');
+}
+
+async function assignRoom(key, room) {
+  try {
+    await dbSet(`patients/${key}/assignedRoom`, room);
+    if (room) await dbPush('notifications', { type:'ward', msg:`병실 배정 완료 → ${room}`, time: timeStr(), createdAt: Date.now() });
+    await fetchAll();
+  } catch(e) { showToast('저장 실패. 재시도해 주세요.'); }
+}
+
+async function deletePatient(key) {
+  if (!confirm('이 환자를 삭제하시겠습니까?')) return;
+  try {
+    await dbDelete(`patients/${key}`);
+    await fetchAll();
+  } catch(e) { showToast('삭제 실패.'); }
+}
+
+// ═══════════════════════════════════════════════
+// 렌더
+// ═══════════════════════════════════════════════
+function renderList() {
+  const dept = document.getElementById('filterDept').value;
+  const gender = document.getElementById('filterGender').value;
+  const list = patients.filter(p=>(!dept||p.dept===dept)&&(!gender||p.gender===gender));
+
+  const depts = [...new Set(patients.map(p=>p.dept))];
+  const cur = document.getElementById('filterDept').value;
+  document.getElementById('filterDept').innerHTML =
+    '<option value="">전체 과</option>' +
+    depts.map(d=>`<option${cur===d?' selected':''}>${d}</option>`).join('');
+
+  const tbody = document.getElementById('patientTbody');
+  const empty = document.getElementById('listEmpty');
+  if (!list.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML = list.map(p=>`
+    <tr>
+      <td><span class="pill-dept">${p.dept}</span></td>
+      <td style="font-weight:700">${p.name}</td>
+      <td style="font-size:12px;color:var(--text-s)">${p.chart||'-'}</td>
+      <td>${p.gender?`<span class="pill pill-${p.gender==='남'?'m':'f'}">${p.gender}</span> `:''}<span style="font-size:12px">${p.age?p.age+'세':''}</span></td>
+      <td style="font-size:12px">${p.reason}</td>
+      <td style="font-size:11px;color:var(--text-s)">${p.memo||'-'}</td>
+      <td style="font-size:12px">${p.ward||'-'}</td>
+      <td><input class="room-input" type="text" value="${p.assignedRoom||''}" placeholder="예)31-201"
+        onchange="assignRoom('${p._key}',this.value)"></td>
+      <td><button class="icon-btn" onclick="deletePatient('${p._key}')" title="삭제">🗑</button></td>
+    </tr>`).join('');
+}
+
+function renderWard() {
+  document.getElementById('wardTbody').innerHTML = Object.entries(wards).map(([w,v])=>{
+    const total = v.m+v.f+v.s+v.etc;
+    const cls = total<=2?'c-full':total<=4?'c-warn':'c-avail';
+    return `<tr>
+      <td>${w}</td>
+      <td class="${v.m<=1?'c-warn':''} clickable" onclick="editWardCell('${w}','m',${v.m})">${v.m}</td>
+      <td class="${v.f<=1?'c-warn':''} clickable" onclick="editWardCell('${w}','f',${v.f})">${v.f}</td>
+      <td class="clickable" onclick="editWardCell('${w}','s',${v.s})">${v.s}</td>
+      <td class="clickable" onclick="editWardCell('${w}','etc',${v.etc})">${v.etc}</td>
+      <td class="${cls}">${total}개</td>
+    </tr>`;
+  }).join('');
+}
+
+function editWardCell(ward, field, cur) {
+  const labels = {m:'남자',f:'여자',s:'1인실',etc:'기타'};
+  const v = prompt(`${ward} — ${labels[field]} 잔여 병상 수:`, cur);
+  if (v===null) return;
+  wards[ward][field] = parseInt(v)||0;
+  renderWard();
+}
+
+async function saveWardAndNotify() {
+  try {
+    await dbSet('wards', wards);
+    await dbPush('notifications', { type:'ward', msg:'원무과: 병동 잔여병상 현황 업데이트', time: timeStr(), createdAt: Date.now() });
+    await fetchAll();
+    showToast('병동 현황 저장 완료 ✓ 전 직원 실시간 공유됨');
+  } catch(e) { showToast('저장 실패. 재시도해 주세요.'); }
+}
+
+function renderSummary() {
+  document.getElementById('summaryTitle').textContent = `📋 ${tomorrow()} 입원예정 최종 요약`;
+  const el = document.getElementById('summaryContent');
+  if (!patients.length) { el.innerHTML='<p style="color:var(--text-s);padding:12px 0">입력된 환자가 없습니다.</p>'; document.getElementById('waitSection').innerHTML=''; return; }
+  const byDept = {};
+  patients.forEach(p=>{ if(!byDept[p.dept]) byDept[p.dept]=[]; byDept[p.dept].push(p); });
+  el.innerHTML = `
+    <div class="sum-row"><span class="sum-label">총 입원예정</span><span class="sum-val">${patients.length}명 (남 ${patients.filter(p=>p.gender==='남').length} / 여 ${patients.filter(p=>p.gender==='여').length})</span></div>
+    ${Object.entries(byDept).map(([d,ps])=>`
+      <div class="sum-row">
+        <span class="sum-label"><span class="pill-dept">${d}</span></span>
+        <span style="font-size:13px">${ps.map(p=>`${p.name}${p.gender?'/'+p.gender:''}${p.age?p.age+'세':''}${p.assignedRoom?' ['+p.assignedRoom+']':''}`).join(' · ')}</span>
+      </div>`).join('')}`;
+
+  const wait = patients.filter(p=>!p.assignedRoom);
+  const ws = document.getElementById('waitSection');
+  ws.innerHTML = wait.length
+    ? `<div class="wait-card"><h4>⚠️ 병실 미배정 환자 ${wait.length}명</h4>${wait.map((p,i)=>`<div class="wait-item">${i+1}. ${p.dept} ${p.name} ${p.gender||''}${p.age?p.age+'세':''} — ${p.reason}</div>`).join('')}</div>`
+    : `<div class="all-assigned">✅ 모든 환자 병실 배정 완료</div>`;
+}
+
+function renderNotify() {
+  const el = document.getElementById('notifyList');
+  if (!notifications.length) { el.innerHTML='<div class="empty-state">기록이 없습니다</div>'; return; }
+  el.innerHTML = notifications.map(n=>
+    `<div class="notify-item"><div class="dot dot-${n.type}"></div>
+     <div><div class="n-msg">${n.msg}</div><div class="n-time">${n.time}</div></div></div>`
+  ).join('');
+}
+
+function exportKakao() {
+  const lines = [
+    `📋 ${tomorrow()} 입원예정 환자 현황`,
+    `총 ${patients.length}명 (남 ${patients.filter(p=>p.gender==='남').length} / 여 ${patients.filter(p=>p.gender==='여').length})`,
+    `작성마감: 오후 4:30`,`──────────────────`
+  ];
+  const byDept = {};
+  patients.forEach(p=>{ if(!byDept[p.dept]) byDept[p.dept]=[]; byDept[p.dept].push(p); });
+  Object.entries(byDept).forEach(([d,ps])=>{
+    lines.push(`\n[${d}]`);
+    ps.forEach((p,i)=>lines.push(` ${i+1}. ${p.name} ${p.gender||''}${p.age?p.age+'세':''} — ${p.reason}${p.assignedRoom?' ('+p.assignedRoom+')':''}${p.memo?' *'+p.memo:''}`));
+  });
+  const wait = patients.filter(p=>!p.assignedRoom);
+  if (wait.length) { lines.push(`\n──────────────────`); lines.push(`⚠️ 병실 미배정: ${wait.map(p=>p.dept+' '+p.name).join(', ')}`); }
+  const text = lines.join('\n');
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(()=>showToast('카카오톡 붙여넣기용 복사 완료 ✓')).catch(()=>prompt('복사하세요:',text));
+  else prompt('복사하세요:',text);
+}
+
+function switchTab(t) {
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['input','list','ward','summary','notify'][i]===t));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sec-'+t).classList.add('active');
+  if(t==='list') renderList();
+  if(t==='ward') renderWard();
+  if(t==='summary') renderSummary();
+  if(t==='notify') renderNotify();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
