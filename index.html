@@ -194,7 +194,9 @@ tr:last-child td{border-bottom:none}
 .wait-item-sub{font-size:11px;color:var(--orange-t);opacity:.8;margin-top:1px}
 
 /* 병동확인 탭 */
-.wv-header{background:var(--green-l);border:1px solid #7ecbb0;border-radius:var(--rl);padding:14px;margin-bottom:14px}
+.adm-ward-btn{padding:5px 10px;font-size:12px;font-weight:700;border-radius:var(--r);cursor:pointer;border:2px solid var(--border);background:#fff;color:var(--text-s);font-family:var(--font);transition:all .1s}
+.adm-ward-btn:hover{border-color:var(--purple);color:var(--purple-t)}
+.adm-ward-btn.active{border-color:var(--purple);background:var(--purple-l);color:var(--purple-t)};border:1px solid #7ecbb0;border-radius:var(--rl);padding:14px;margin-bottom:14px}
 .wv-header h3{font-size:14px;font-weight:700;color:var(--green-t);margin-bottom:3px}
 .wv-header p{font-size:12px;color:var(--green-t);opacity:.85}
 .ward-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
@@ -438,6 +440,7 @@ tr:last-child td{border-bottom:none}
       <select id="wvFStatus" onchange="renderWview()"><option value="">전체</option><option value="wait">미배정</option><option value="done">배정완료</option></select>
       <button class="btn bgh bsm" onclick="window.print()">🖨 인쇄</button>
     </div>
+    <div id="wviewWardPanel" style="display:grid;gap:8px;margin-bottom:14px"></div>
     <div id="wviewStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
     <div id="wviewList"></div>
     <div id="wviewEmpty" class="es" style="display:none">📭 해당 병동 입원예정 환자가 없습니다</div>
@@ -659,17 +662,28 @@ function clearForm(){
 async function saveRoom(key){
   const inp=document.getElementById('room-'+key);
   if(!inp){showToast('입력칸 오류. 새로고침 해주세요.');return;}
-  const room=inp.value.trim();
-  if(!room){showToast('병실 번호를 입력해 주세요.');inp.focus();return;}
+  const roomNum=inp.value.trim();
+  if(!roomNum){showToast('호실 번호를 입력해 주세요.');inp.focus();return;}
+  const ward=admSelWard[key]||'';
+  if(!ward){showToast('병동을 먼저 선택해 주세요.');return;}
+  const fullRoom=`${ward} ${roomNum}`;
   inp.disabled=true;
   try{
-    await dbS(`patients/${tdk}/${key}/assignedRoom`,room);
-    await dbP('notifications',{type:'ward',msg:`병실 선점 완료 → ${room}`,time:tsStr(),createdAt:Date.now()});
-    // 데이터만 새로 받고 입퇴원계 탭만 재렌더 (전체 fetchAll 대신)
+    // 병실 + 병동 동시 저장
+    const p=patients.find(x=>x._key===key);
+    if(p){
+      const updated={...p,assignedRoom:fullRoom,ward:ward};
+      delete updated._key;
+      await dbS(`patients/${tdk}/${key}`,updated);
+    } else {
+      await dbS(`patients/${tdk}/${key}/assignedRoom`,fullRoom);
+      await dbS(`patients/${tdk}/${key}/ward`,ward);
+    }
+    await dbP('notifications',{type:'ward',msg:`병실 선점: ${fullRoom}`,time:tsStr(),createdAt:Date.now()});
     const pR=await dbG(`patients/${tdk}`);
     patients=pR?Object.entries(pR).map(([k,v])=>({...v,_key:k})):[];
     updStats();updBadges();renderAdm();
-    showToast(`✅ ${room} 배정 완료!`);
+    showToast(`✅ ${fullRoom} 배정 완료!`);
   }catch(e){
     inp.disabled=false;
     showToast('저장 실패. 다시 시도해 주세요.');
@@ -810,6 +824,17 @@ function renderWaitList(){
 }
 
 // ── 입퇴원계 MR·OP 목록 ──
+let admSelWard = {}; // key별 선택된 병동 저장
+
+function selAdmWard(key, ward) {
+  admSelWard[key] = ward;
+  // 해당 환자의 병동 버튼 UI 업데이트
+  WLIST.forEach(w => {
+    const btn = document.getElementById(`adm-wb-${key}-${w}`);
+    if(btn) btn.className = 'adm-ward-btn' + (w === ward ? ' active' : '');
+  });
+}
+
 function renderAdm(){
   const dF=document.getElementById('admFDept').value,tF=document.getElementById('admFType').value,sF=document.getElementById('admFStatus').value;
   let list=patients.filter(p=>{
@@ -830,20 +855,27 @@ function renderAdm(){
   tbody.innerHTML=list.map(p=>{
     const t=p.type||'';
     const rc=p.assignedRoom?'row-blue':t.includes('MR')?'row-mr':'row-op';
-    // 상태 표시등
     const statusLight=p.assignedRoom
       ?'<div class="light-wrap"><span class="light" style="background:#1a6fd4;box-shadow:0 0 8px #1a6fd4;width:13px;height:13px"></span><span style="font-size:12px;font-weight:700;color:#0d4a9e">🔵 배정완료</span></div>'
       :'<div class="light-wrap"><span class="light light-red" style="width:13px;height:13px"></span><span style="font-size:12px;font-weight:700;color:var(--red-t)">🔴 미배정</span></div>';
-    // 병실 입력 셀
+
+    // 현재 선택된 병동 (이미 배정된 경우 기존 병동, 아니면 희망병동 기본 선택)
+    if(!admSelWard[p._key]) admSelWard[p._key] = p.ward || '';
+
     const roomCell=p.assignedRoom
       ?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700;color:#0d4a9e;background:#e8f1fc;padding:5px 12px;border-radius:8px;border:2px solid #1a6fd4;display:inline-flex;align-items:center;gap:5px">🔵 ${p.assignedRoom}</span>
           <button class="cancel-btn" onclick="clearRoom('${p._key}')">취소</button>
         </div>`
-      :`<div class="room-input-wrap">
-          <input class="ri-adm" type="text" id="room-${p._key}" placeholder="병실 번호 입력">
-          <button class="save-btn" onclick="saveRoom('${p._key}')">저장</button>
-          <span style="font-size:12px;font-weight:700;color:var(--red-t);display:inline-flex;align-items:center;gap:4px"><span class="light light-red" style="width:9px;height:9px"></span>미배정</span>
+      :`<div style="display:flex;flex-direction:column;gap:6px;min-width:260px">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${WLIST.map(w=>`<button id="adm-wb-${p._key}-${w}" class="adm-ward-btn${admSelWard[p._key]===w?' active':''}" onclick="selAdmWard('${p._key}','${w}')">${w}</button>`).join('')}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input class="ri-adm" type="text" id="room-${p._key}" placeholder="호실 입력 (예: 201호)" style="flex:1">
+            <button class="save-btn" onclick="saveRoom('${p._key}')">저장</button>
+          </div>
+          <span style="font-size:11px;font-weight:700;color:var(--red-t);display:inline-flex;align-items:center;gap:4px"><span class="light light-red" style="width:8px;height:8px"></span>미배정</span>
         </div>`;
     return `<tr class="${rc}">
       <td>${statusLight}</td>
@@ -854,8 +886,7 @@ function renderAdm(){
       <td>${typePill(t)}</td>
       <td style="font-size:12px">${p.reason}</td>
       <td style="font-size:11px;color:var(--text-s)">${p.memo||'-'}</td>
-      <td style="font-size:12px">${p.ward||'-'}</td>
-      <td style="background:#faf5ff;min-width:220px">${roomCell}</td>
+      <td style="background:#faf5ff">${roomCell}</td>
       <td><button class="ib" onclick="openEdit('${p._key}')">✏️</button></td>
     </tr>`;
   }).join('');
@@ -880,11 +911,38 @@ function renderWview(){
   const depts=[...new Set(patients.map(p=>p.dept))],cur=document.getElementById('wvFDept').value;
   document.getElementById('wvFDept').innerHTML='<option value="">전체 과</option>'+depts.map(d=>`<option${cur===d?' selected':''}>${d}</option>`).join('');
   const total=list.length,assigned=list.filter(p=>p.assignedRoom).length;
+
+  // 잔여병상 패널 - 선택 병동에 따라 연동
+  const wardKeys=selWardKey==='전체'?WLIST:[selWardKey];
+  const wp=document.getElementById('wviewWardPanel');
+  wp.style.gridTemplateColumns=selWardKey==='전체'?'repeat(5,1fr)':'repeat(4,1fr)';
+  wp.innerHTML=wardKeys.map(w=>{
+    const v=wards[w]||{m:0,f:0,s:0,etc:0};
+    const tot=v.m+v.f+v.s+v.etc;
+    const lc=tot<=2?'wl-r':tot<=5?'wl-y':'wl-g';
+    const tc2=tot<=2?'var(--red)':tot<=5?'var(--orange)':'var(--green)';
+    const bc=tot<=2?'var(--red)':tot<=5?'var(--orange)':'var(--green)';
+    return `<div class="sc" style="border:2px solid ${bc};padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:8px">
+        <span class="ward-light ${lc}" style="width:10px;height:10px"></span>
+        <span style="font-size:13px;font-weight:700">${w}</span>
+        <span style="font-size:12px;font-weight:700;color:${tc2};margin-left:4px">총 ${tot}개</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:12px">
+        <span style="color:var(--text-s)">남자</span><span style="font-weight:700;color:${v.m<=1?'var(--red)':'var(--green)'}">${v.m}개</span>
+        <span style="color:var(--text-s)">여자</span><span style="font-weight:700;color:${v.f<=1?'var(--red)':'var(--green)'}">${v.f}개</span>
+        <span style="color:var(--text-s)">1인실</span><span style="font-weight:700">${v.s}개</span>
+        <span style="color:var(--text-s)">기타</span><span style="font-weight:700">${v.etc}개</span>
+      </div>
+    </div>`;
+  }).join('');
+
   document.getElementById('wviewStats').innerHTML=`
     <div class="sc"><div class="sn" style="font-size:20px">${total}</div><div class="sl">총 환자</div></div>
-    <div class="sc" style="border-color:var(--green)"><div class="sn" style="font-size:20px;color:var(--green)">${assigned}</div><div class="sl">배정완료</div></div>
-    <div class="sc hi-r"><div class="sn" style="font-size:20px">${total-assigned}</div><div class="sl">미배정</div></div>
+    <div class="sc" style="border-color:#1a6fd4"><div class="sn" style="font-size:20px;color:#1a6fd4">${assigned}</div><div class="sl">🔵 배정완료</div></div>
+    <div class="sc hi-r"><div class="sn" style="font-size:20px">${total-assigned}</div><div class="sl">🔴 미배정</div></div>
     <div class="sc hi-p"><div class="sn" style="font-size:20px">${list.filter(p=>isMrOp(p)).length}</div><div class="sl">MR·수술</div></div>`;
+
   const el=document.getElementById('wviewList'),empty=document.getElementById('wviewEmpty');
   if(!list.length){el.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
@@ -892,32 +950,44 @@ function renderWview(){
     const t=p.type||'일반';
     const gp=p.gender?`<span class="pill ${p.gender==='남'?'pm':'pf'}">${p.gender}</span> `:'';
     const wl=p.ward?`<span style="background:#e0f2fe;color:#0369a1;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700">${p.ward}</span>`:'';
-    const wpcCls=p.assignedRoom?'wpc wpc-ok':t.includes('MR')&&t.includes('OP')?'wpc wpc-mr wpc-op':t.includes('MR')?'wpc wpc-mr':t.includes('OP')?'wpc wpc-op':'wpc wpc-wait';
-    const statusIcon=p.assignedRoom?'🟢':'🔴';
+    const wpcCls=p.assignedRoom?'wpc wpc-ok':t.includes('MR')?'wpc wpc-mr':t.includes('OP')?'wpc wpc-op':'wpc wpc-wait';
     const roomPart=p.assignedRoom
-      ?`<span class="room-assigned">🟢 ${p.assignedRoom}</span>
+      ?`<span style="font-size:13px;font-weight:700;color:#0d4a9e;background:#e8f1fc;padding:4px 10px;border-radius:8px;border:2px solid #1a6fd4;display:inline-flex;align-items:center;gap:4px">🔵 ${p.assignedRoom}</span>
          <button class="cancel-btn" onclick="assignRoomWard('${p._key}','')">취소</button>`
-      :`<input class="ri-ward" type="text" id="wroom-${p._key}" placeholder="병실 지정">
-        <button class="save-btn" style="background:var(--green)" onclick="saveRoomWard('${p._key}')">저장</button>
-        <span style="font-size:12px;color:var(--red-t);font-weight:700">미배정</span>`;
+      :`<div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${WLIST.map(w2=>`<button class="adm-ward-btn${(p.ward===w2)?' active':''}" onclick="this.parentElement.querySelectorAll('.adm-ward-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');document.getElementById('wroom-${p._key}').dataset.ward='${w2}'">${w2}</button>`).join('')}
+          </div>
+          <div style="display:flex;gap:5px;align-items:center">
+            <input class="ri-ward" type="text" id="wroom-${p._key}" data-ward="${p.ward||''}" placeholder="호실 입력 (예: 201호)">
+            <button class="save-btn" style="background:var(--green)" onclick="saveRoomWard('${p._key}')">저장</button>
+            <span style="font-size:11px;color:var(--red-t);font-weight:700;display:inline-flex;align-items:center;gap:3px"><span class="light light-red" style="width:8px;height:8px"></span>미배정</span>
+          </div>
+        </div>`;
     return `<div class="${wpcCls}">
-      <div style="font-size:20px;margin-top:2px">${statusIcon}</div>
+      <div style="font-size:20px;margin-top:2px">${p.assignedRoom?'🔵':'🔴'}</div>
       <div class="wpc-info">
         <div class="wpc-name">${gp}${p.name} <span style="font-size:12px;font-weight:400;color:var(--text-s)">${p.age?p.age+'세':''}</span> ${typePill(t)}</div>
         <div class="wpc-sub"><span class="pd">${p.dept}</span> ${wl}${p.chart?` <span style="color:var(--text-s)">차트:${p.chart}</span>`:''}</div>
-        <div style="font-size:12px;margin-top:3px;color:var(--text)">${p.reason}${p.memo?` · <span style="color:var(--text-s)">${p.memo}</span>`:''}</div>
+        <div style="font-size:12px;margin-top:3px">${p.reason}${p.memo?` · <span style="color:var(--text-s)">${p.memo}</span>`:''}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${roomPart}</div>
+      <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap">${roomPart}</div>
     </div>`;
   }).join('');
 }
 async function saveRoomWard(key){
   const inp=document.getElementById('wroom-'+key);if(!inp)return;
-  const room=inp.value.trim();if(!room){showToast('병실 번호를 입력해 주세요.');inp.focus();return;}
+  const roomNum=inp.value.trim();
+  const ward=inp.dataset.ward||'';
+  if(!roomNum){showToast('호실 번호를 입력해 주세요.');inp.focus();return;}
+  if(!ward){showToast('병동을 먼저 선택해 주세요.');return;}
+  const fullRoom=`${ward} ${roomNum}`;
   try{
-    await dbS(`patients/${tdk}/${key}/assignedRoom`,room);
-    await dbP('notifications',{type:'ward',msg:`[병동] 병실 지정 → ${room}`,time:tsStr(),createdAt:Date.now()});
-    showToast(`병실 ${room} 지정 완료 ✓`);await fetchAll();
+    const p=patients.find(x=>x._key===key);
+    if(p){const u={...p,assignedRoom:fullRoom,ward};delete u._key;await dbS(`patients/${tdk}/${key}`,u);}
+    else{await dbS(`patients/${tdk}/${key}/assignedRoom`,fullRoom);}
+    await dbP('notifications',{type:'ward',msg:`[병동] 병실 지정 → ${fullRoom}`,time:tsStr(),createdAt:Date.now()});
+    showToast(`병실 ${fullRoom} 지정 완료 ✓`);await fetchAll();
   }catch(e){showToast('저장 실패.');}
 }
 async function assignRoomWard(key,room){
